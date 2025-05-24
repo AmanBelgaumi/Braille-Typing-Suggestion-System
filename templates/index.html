@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Real-Time Braille Autocorrect</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: #f9f9f9;
+      padding: 2em;
+      color: #333;
+    }
+    h2 {
+      color: #2c3e50;
+    }
+    .container {
+      max-width: 700px;
+      margin: auto;
+      background: white;
+      border-radius: 12px;
+      padding: 2em;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+    #output, #sentence {
+      font-size: 1.2em;
+      background-color: #ecf0f1;
+      padding: 1em;
+      border-radius: 8px;
+      margin-top: 1em;
+    }
+    .key-display {
+      font-size: 1em;
+      color: #555;
+      margin-top: 1em;
+    }
+    ul {
+      padding-left: 1.2em;
+      margin-top: 1em;
+    }
+    li {
+      cursor: pointer;
+      margin-bottom: 0.5em;
+      padding: 0.3em 0.5em;
+      border-radius: 5px;
+      transition: background 0.2s;
+    }
+    li:hover {
+      background-color: #d0e6ff;
+      color: #2c3e50;
+    }
+    strong {
+      color: #2c3e50;
+    }
+    .instructions {
+      font-size: 0.95em;
+      color: #666;
+      margin-top: 0.5em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Real-Time Braille Autocorrect (QWERTY Key Combos)</h2>
+    <p class="instructions">Press keys simultaneously (e.g. D+Q+O for letter 'o'). Press <strong>Space</strong> to end a word, <strong>Backspace</strong> to delete last character.</p>
+    
+    <div class="key-display">Pressed keys: <span id="pressedKeys"></span></div>
+    <div id="output">Current Word: <strong><span id="currentWord"></span></strong></div>
+    <div id="sentence">Final Sentence: <strong><span id="typedSentence"></span></strong></div>
+    
+    <h3>Suggestions:</h3>
+    <ul id="suggestions"></ul>
+  </div>
+
+  <script>
+    const keyToDot = { D: 1, W: 2, Q: 3, K: 4, O: 5, P: 6 };
+    const brailleMap = {
+      '1': 'a', '1,2': 'b', '1,4': 'c', '1,4,5': 'd', '1,5': 'e',
+      '1,2,4': 'f', '1,2,4,5': 'g', '1,2,5': 'h', '2,4': 'i', '2,4,5': 'j',
+      '1,3': 'k', '1,2,3': 'l', '1,3,4': 'm', '1,3,4,5': 'n', '1,3,5': 'o',
+      '1,2,3,4': 'p', '1,2,3,4,5': 'q', '1,2,3,5': 'r', '2,3,4': 's', '2,3,4,5': 't',
+      '1,3,6': 'u', '1,2,3,6': 'v', '2,4,5,6': 'w', '1,3,4,6': 'x', '1,3,4,5,6': 'y', '1,3,5,6': 'z'
+    };
+
+    const pressed = new Set();
+    let currentWord = '';
+    let sentence = [];
+
+    const pressedKeysEl = document.getElementById('pressedKeys');
+    const currentWordEl = document.getElementById('currentWord');
+    const typedSentenceEl = document.getElementById('typedSentence');
+    const suggestionsEl = document.getElementById('suggestions');
+
+    function updateSentenceDisplay() {
+      typedSentenceEl.textContent = sentence.join(' ');
+    }
+
+    function showSuggestions(suggestions) {
+      suggestionsEl.innerHTML = '';
+      suggestions.forEach((sugg, i) => {
+        const li = document.createElement('li');
+        li.textContent = `${i + 1}. ${sugg}`;
+        li.addEventListener('click', () => {
+          sentence[sentence.length - 1] = sugg;
+          updateSentenceDisplay();
+        });
+        suggestionsEl.appendChild(li);
+      });
+    }
+
+    async function getSuggestion(word) {
+      const res = await fetch('/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: word })
+      });
+      const data = await res.json();
+      if (data.best) sentence.push(data.best);
+      updateSentenceDisplay();
+      showSuggestions(data.suggestions);
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toUpperCase() in keyToDot) {
+        pressed.add(e.key.toUpperCase());
+        pressedKeysEl.textContent = Array.from(pressed).join(' + ');
+        e.preventDefault();
+      } else if (e.key === 'Backspace') {
+        currentWord = currentWord.slice(0, -1);
+        currentWordEl.textContent = currentWord;
+        e.preventDefault();
+      }
+    });
+
+    document.addEventListener('keyup', async (e) => {
+      if (e.code === 'Space') {
+        if (currentWord) {
+          await getSuggestion(currentWord);
+        }
+        currentWord = '';
+        currentWordEl.textContent = '';
+      } else if (e.key.toUpperCase() in keyToDot) {
+        const dots = Array.from(pressed)
+          .map(k => keyToDot[k])
+          .filter(Boolean)
+          .sort((a, b) => a - b)
+          .join(',');
+
+        const letter = brailleMap[dots] || '';
+        currentWord += letter;
+        currentWordEl.textContent = currentWord;
+        pressed.clear();
+        pressedKeysEl.textContent = '';
+      }
+    });
+  </script>
+</body>
+</html>
